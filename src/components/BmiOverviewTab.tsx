@@ -118,6 +118,24 @@ export const BmiOverviewTab: React.FC<BmiOverviewTabProps> = ({
             </div>
 
             <div className="mt-5 grid grid-cols-2 gap-4">
+              <div className="col-span-2">
+                <label
+                  htmlFor="input-profile-name"
+                  className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5"
+                >
+                  使用者名稱 / 個人健康檔案名稱
+                </label>
+                <input
+                  id="input-profile-name"
+                  type="text"
+                  maxLength={40}
+                  placeholder="請輸入您的姓名或暱稱"
+                  value={profile.name}
+                  onChange={(e) => onUpdateProfile({ name: e.target.value })}
+                  className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/70 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-600"
+                />
+              </div>
+
               <div>
                 <label
                   htmlFor="input-height-cm"

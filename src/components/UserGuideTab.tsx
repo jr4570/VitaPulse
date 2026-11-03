@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   PrivacySettings,
+  UserProfile,
   isEnvForcedGitHubDemo,
   isGitHubDemoLocked,
   isPreventCloseLocked,
@@ -23,6 +24,8 @@ import {
 } from 'lucide-react';
 
 interface UserGuideTabProps {
+  profile: UserProfile;
+  onUpdateProfile: (partial: Partial<UserProfile>) => void;
   privacy: PrivacySettings;
   onUpdatePrivacy: (partial: Partial<PrivacySettings>) => void;
   onTriggerPinLockNow: () => void;
@@ -30,6 +33,8 @@ interface UserGuideTabProps {
 }
 
 export const UserGuideTab: React.FC<UserGuideTabProps> = ({
+  profile,
+  onUpdateProfile,
   privacy,
   onUpdatePrivacy,
   onTriggerPinLockNow,
@@ -178,6 +183,32 @@ export const UserGuideTab: React.FC<UserGuideTabProps> = ({
             </div>
           </form>
         )}
+
+        {/* User Profile Name Configuration Bar */}
+        <div className="mt-4 p-4 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <label
+              htmlFor="settings-profile-name"
+              className="text-sm font-semibold text-slate-900 dark:text-slate-100 block"
+            >
+              使用者名稱與個人健康檔案設定
+            </label>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              自訂顯示於頂部健康儀表板與匯出報表中的個人姓名或暱稱
+            </p>
+          </div>
+          <div className="flex items-center gap-2 sm:w-80">
+            <input
+              id="settings-profile-name"
+              type="text"
+              maxLength={40}
+              placeholder="輸入使用者名稱或暱稱"
+              value={profile.name}
+              onChange={(e) => onUpdateProfile({ name: e.target.value })}
+              className="w-full px-3 py-1.5 text-sm bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-600"
+            />
+          </div>
+        </div>
 
         {/* 3 Control Cards */}
         <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-5">

@@ -19,6 +19,7 @@ import {
   saveState,
 } from './utils/storage';
 import {
+  MentalHealthScalesState,
   QuestionnaireAnswers,
   calculateBMI,
   calculateBMR,
@@ -71,6 +72,7 @@ export default function App() {
   const [unlockInput, setUnlockInput] = useState<string>('');
   const [unlockError, setUnlockError] = useState<string | null>(null);
   const [quickSaveToast, setQuickSaveToast] = useState<string | null>(null);
+  const [isEditingName, setIsEditingName] = useState<boolean>(false);
 
   const [restingHr, setRestingHr] = useState<number>(
     state.history[state.history.length - 1]?.restingHr || 60
@@ -148,6 +150,13 @@ export default function App() {
     setState((prev) => ({
       ...prev,
       questionnaire: { ...prev.questionnaire, ...partial },
+    }));
+  };
+
+  const handleUpdateMentalHealthScales = (partial: Partial<MentalHealthScalesState>) => {
+    setState((prev) => ({
+      ...prev,
+      mentalHealthScales: { ...prev.mentalHealthScales, ...partial },
     }));
   };
 
@@ -448,10 +457,46 @@ export default function App() {
               <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">
                 個人全方位健康監控與身體組成管家
               </h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
-                <span>
-                  使用者：{effectiveDemoMode ? profile.name : profile.name.replace(/\s*\(示範\)/, '')}
-                </span>
+              <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 tabular-nums flex flex-wrap items-center gap-y-1">
+                {isEditingName ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <label htmlFor="inline-profile-name" className="font-medium text-slate-700 dark:text-slate-300">
+                      使用者名稱：
+                    </label>
+                    <input
+                      id="inline-profile-name"
+                      type="text"
+                      autoFocus
+                      maxLength={40}
+                      value={profile.name}
+                      onChange={(e) => handleUpdateProfile({ name: e.target.value })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') setIsEditingName(false);
+                      }}
+                      className="px-2 py-0.5 text-xs bg-slate-50 dark:bg-slate-800 border border-teal-500 rounded text-slate-900 dark:text-slate-100 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingName(false)}
+                      className="px-2 py-0.5 text-xs font-semibold bg-teal-600 text-white rounded hover:bg-teal-700 cursor-pointer"
+                    >
+                      完成
+                    </button>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span>
+                      使用者：{effectiveDemoMode ? profile.name : profile.name.replace(/\s*\(示範\)/, '')}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingName(true)}
+                      className="text-teal-600 dark:text-teal-400 hover:underline font-medium cursor-pointer"
+                    >
+                      (修改名稱)
+                    </button>
+                  </span>
+                )}
                 <span aria-hidden="true" className="mx-1.5">·</span>
                 <span>
                   環境：{isGithubLocked ? 'GitHub 公開演示 (防關閉鎖定)' : effectiveDemoMode ? '自架部署 (演示開啟)' : '自架部署 (個人自用)'}
@@ -462,7 +507,7 @@ export default function App() {
                 <span>體重 {formatMaskedNumber(profile.weightKg, masked, 'kg')}</span>
                 <span aria-hidden="true" className="mx-1.5">·</span>
                 <span>歷史紀錄 {history.length} 筆</span>
-              </p>
+              </div>
             </div>
 
             {/* Secondary Workspace Utility Controls */}
@@ -707,6 +752,11 @@ export default function App() {
             onUpdateProfile={handleUpdateProfile}
             questionnaire={questionnaire}
             onUpdateQuestionnaire={handleUpdateQuestionnaire}
+            mentalHealthScales={state.mentalHealthScales}
+            onUpdateMentalHealthScales={handleUpdateMentalHealthScales}
+            onSyncStressToVitals={(perceivedStress1To10) =>
+              setStressParams((prev) => ({ ...prev, perceivedStress: perceivedStress1To10 }))
+            }
             exerciseCompletedMinsThisWeek={state.exerciseCompletedMinsThisWeek}
             strengthCompletedSessionsThisWeek={state.strengthCompletedSessionsThisWeek}
             stepsToday={state.stepsToday}
@@ -764,6 +814,8 @@ export default function App() {
 
         {activeTab === 'guide' && (
           <UserGuideTab
+            profile={profile}
+            onUpdateProfile={handleUpdateProfile}
             privacy={privacy}
             onUpdatePrivacy={handleUpdatePrivacy}
             onTriggerPinLockNow={() => setIsPinLocked(true)}

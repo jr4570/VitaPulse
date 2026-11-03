@@ -1,21 +1,37 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   HealthGoal,
+  MentalHealthScalesState,
   QuestionnaireAnswers,
   calculateBMI,
   calculateBMR,
   calculateNutritionAndExercisePlan,
   calculateTDEE,
   evaluateHealthQuestionnaire,
+  evaluateMentalHealthScales,
 } from '../utils/healthCalculations';
 import { UserProfile, formatMaskedNumber } from '../utils/storage';
-import { CheckCircle2, AlertCircle, ArrowUpRight, Flame, Utensils, Dumbbell, Footprints } from 'lucide-react';
+import {
+  CheckCircle2,
+  AlertCircle,
+  ArrowUpRight,
+  Flame,
+  Utensils,
+  Dumbbell,
+  Footprints,
+  Brain,
+  HeartHandshake,
+  RotateCcw,
+} from 'lucide-react';
 
 interface QuestionnaireAndGoalsTabProps {
   profile: UserProfile;
   onUpdateProfile: (partial: Partial<UserProfile>) => void;
   questionnaire: QuestionnaireAnswers;
   onUpdateQuestionnaire: (partial: Partial<QuestionnaireAnswers>) => void;
+  mentalHealthScales: MentalHealthScalesState;
+  onUpdateMentalHealthScales: (partial: Partial<MentalHealthScalesState>) => void;
+  onSyncStressToVitals?: (perceivedStress1To10: number) => void;
   exerciseCompletedMinsThisWeek: number;
   strengthCompletedSessionsThisWeek: number;
   stepsToday: number;
@@ -121,31 +137,110 @@ const QUESTION_FIELDS: QuestionFieldConfig[] = [
   },
 ];
 
+const PHQ9_QUESTIONS: string[] = [
+  '01. 做事時提不起勁或沒有樂趣',
+  '02. 感到心情低落、沮喪或絕望',
+  '03. 入睡困難、睡不安穩或睡眠過多',
+  '04. 感覺疲倦或沒有活力',
+  '05. 食慾不振或吃太多',
+  '06. 覺得自己很糟、覺得自己很失敗，或讓自己與家人失望',
+  '07. 對事物專注有困難（例如閱讀文件、處理工作或看電視時）',
+  '08. 動作或說話速度緩慢到別人已經察覺，或正好相反——煩躁或坐立不安',
+  '09. 有不如死掉或用某種方式傷害自己的念頭',
+];
+
+const GAD7_QUESTIONS: string[] = [
+  '01. 感覺緊張、焦慮或坐立不安',
+  '02. 無法停止或控制憂慮',
+  '03. 對各種不同的事情過度擔憂',
+  '04. 很難放鬆下來',
+  '05. 由於不安而無法靜坐',
+  '06. 變得容易煩躁或急躁易怒',
+  '07. 感到好像將有可怕的事情發生而害怕',
+];
+
+const BSRS5_QUESTIONS: string[] = [
+  '01. 睡眠困難，譬如難以入睡、易醒或早醒',
+  '02. 感覺緊張不安',
+  '03. 覺得容易苦惱或動怒',
+  '04. 感覺憂鬱、心情低落',
+  '05. 覺得比不上別人',
+];
+
+const PSS6_QUESTIONS: string[] = [
+  '01. 因為發生意料之外的事而感到心煩意亂',
+  '02. 感覺無法控制自己生活中重要的事情',
+  '03. 感到緊張、神經緊繃與壓力沉重',
+  '04. 發現自己無法應付所有必須完成的事情',
+  '05. 因為事情超出自己的控制範圍而感到生氣或煩躁',
+  '06. 覺得困難的事情堆積如山，多到無法克服',
+];
+
+const FREQ_OPTIONS_0_TO_3 = [
+  { value: 0, label: '0分 · 完全沒有' },
+  { value: 1, label: '1分 · 幾天' },
+  { value: 2, label: '2分 · 一半以上天數' },
+  { value: 3, label: '3分 · 幾乎每天' },
+];
+
+const SEVERITY_OPTIONS_0_TO_4 = [
+  { value: 0, label: '0分 · 完全沒有' },
+  { value: 1, label: '1分 · 輕微' },
+  { value: 2, label: '2分 · 中等程度' },
+  { value: 3, label: '3分 · 厲害' },
+  { value: 4, label: '4分 · 非常厲害' },
+];
+
+const PSS_OPTIONS_0_TO_4 = [
+  { value: 0, label: '0分 · 從不' },
+  { value: 1, label: '1分 · 偶爾' },
+  { value: 2, label: '2分 · 有時' },
+  { value: 3, label: '3分 · 常如此' },
+  { value: 4, label: '4分 · 總是如此' },
+];
+
 export const QuestionnaireAndGoalsTab: React.FC<QuestionnaireAndGoalsTabProps> = ({
   profile,
   onUpdateProfile,
   questionnaire,
   onUpdateQuestionnaire,
+  mentalHealthScales,
+  onUpdateMentalHealthScales,
+  onSyncStressToVitals,
   exerciseCompletedMinsThisWeek,
   strengthCompletedSessionsThisWeek,
   stepsToday,
   onUpdateExerciseProgress,
   masked,
 }) => {
+  const [activeMentalScale, setActiveMentalScale] = useState<'phq9' | 'gad7' | 'bsrs5' | 'pss6'>('phq9');
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
+
   const bmi = calculateBMI(profile.heightCm, profile.weightKg);
   const bmr = calculateBMR(profile.weightKg, profile.heightCm, profile.age, profile.gender);
   const tdee = calculateTDEE(bmr, profile.activityLevel);
 
   const evaluation = evaluateHealthQuestionnaire(questionnaire, bmi);
+  const mentalEval = evaluateMentalHealthScales(mentalHealthScales);
   const plan = calculateNutritionAndExercisePlan(tdee, profile.weightKg, bmi, profile.goal);
 
   const cardioPct = Math.min(100, Math.round((exerciseCompletedMinsThisWeek / plan.exerciseGoals.weeklyCardioMins) * 100));
   const strengthPct = Math.min(100, Math.round((strengthCompletedSessionsThisWeek / plan.exerciseGoals.weeklyStrengthSessions) * 100));
   const stepsPct = Math.min(100, Math.round((stepsToday / plan.exerciseGoals.dailySteps) * 100));
 
+  const handleScaleItemChange = (
+    scaleKey: keyof MentalHealthScalesState,
+    index: number,
+    value: number
+  ) => {
+    const nextArr = [...(mentalHealthScales[scaleKey] || [])];
+    nextArr[index] = value;
+    onUpdateMentalHealthScales({ [scaleKey]: nextArr });
+  };
+
   return (
     <div className="space-y-6">
-      {/* Section 1: Questionnaire Input & Diagnostic Evaluation Split */}
+      {/* Section 1: Lifestyle Questionnaire Input & Diagnostic Evaluation Split */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
         {/* Left: 8-Dimension Clinical Lifestyle Questionnaire (6 cols) */}
         <section
@@ -346,7 +441,406 @@ export const QuestionnaireAndGoalsTab: React.FC<QuestionnaireAndGoalsTabProps> =
         </section>
       </div>
 
-      {/* Section 2: Personalized Daily Nutrition Macro Targets & Weekly Exercise Goal Setting */}
+      {/* Section 2: Clinical Depression (PHQ-9), Anxiety (GAD-7), Mood Thermometer (BSRS-5) & Perceived Stress (PSS) Questionnaires */}
+      <section
+        aria-labelledby="mental-scales-heading"
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6"
+      >
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+          <div>
+            <h2
+              id="mental-scales-heading"
+              className="text-lg font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2"
+            >
+              <Brain className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              <span>臨床憂鬱、焦慮、心情溫度計與感知壓力量表中心</span>
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              整合國際標準 PHQ-9 憂鬱症檢核、GAD-7 廣泛性焦慮量表、衛福部 BSRS-5 心情溫度計與 PSS 感知壓力量表
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Scale Selector Tabs */}
+            <div
+              role="tablist"
+              aria-label="選擇心理與壓力量表"
+              className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg"
+            >
+              {(
+                [
+                  { id: 'phq9', label: `PHQ-9 憂鬱量表 (${mentalEval.phq9Score}/27)` },
+                  { id: 'gad7', label: `GAD-7 焦慮量表 (${mentalEval.gad7Score}/21)` },
+                  { id: 'bsrs5', label: `BSRS-5 心情溫度計 (${mentalEval.bsrs5Score}/20)` },
+                  { id: 'pss6', label: `PSS 壓力量表 (${mentalEval.pssScore}/24)` },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeMentalScale === tab.id}
+                  onClick={() => setActiveMentalScale(tab.id)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    activeMentalScale === tab.id
+                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                onUpdateMentalHealthScales({
+                  phq9: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+                  gad7: [0, 0, 0, 0, 0, 0, 0],
+                  bsrs5: [0, 0, 0, 0, 0],
+                  pss6: [0, 0, 0, 0, 0, 0],
+                })
+              }
+              title="將所有心理與壓力量表歸零重置"
+              className="px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>全部歸零</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* Left 7 cols: Active Psychological / Stress Scale Questions */}
+          <div className="lg:col-span-7 space-y-4">
+            {activeMentalScale === 'phq9' && (
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      PHQ-9 憂鬱症自我檢核量表（過去兩週內出現頻率）
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      0–4分：無憂鬱傾向 · 5–9分：輕度 · 10–14分：中度 · 15–19分：中重度 · 20–27分：重度
+                    </p>
+                  </div>
+                  <span className="text-sm font-mono font-bold tabular-nums text-indigo-600 dark:text-indigo-400 shrink-0">
+                    {mentalEval.phq9Score} / 27 分
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  {PHQ9_QUESTIONS.map((qText, idx) => {
+                    const val = mentalHealthScales.phq9?.[idx] ?? 0;
+                    return (
+                      <div
+                        key={qText}
+                        className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                            {qText}
+                          </span>
+                          <span className="text-xs font-mono tabular-nums text-indigo-600 dark:text-indigo-400 shrink-0">
+                            {val} 分
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                          {FREQ_OPTIONS_0_TO_3.map((opt) => (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => handleScaleItemChange('phq9', idx, opt.value)}
+                              className={`py-1.5 px-2 text-xs font-medium rounded-md border transition-colors cursor-pointer ${
+                                val === opt.value
+                                  ? 'bg-indigo-600 border-indigo-600 text-white'
+                                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {activeMentalScale === 'gad7' && (
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      GAD-7 廣泛性焦慮量表（過去兩週內出現頻率）
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      0–4分：情緒平穩 · 5–9分：輕度焦慮 · 10–14分：中度焦慮 · 15–21分：重度焦慮
+                    </p>
+                  </div>
+                  <span className="text-sm font-mono font-bold tabular-nums text-teal-600 dark:text-teal-400 shrink-0">
+                    {mentalEval.gad7Score} / 21 分
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  {GAD7_QUESTIONS.map((qText, idx) => {
+                    const val = mentalHealthScales.gad7?.[idx] ?? 0;
+                    return (
+                      <div
+                        key={qText}
+                        className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                            {qText}
+                          </span>
+                          <span className="text-xs font-mono tabular-nums text-teal-600 dark:text-teal-400 shrink-0">
+                            {val} 分
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                          {FREQ_OPTIONS_0_TO_3.map((opt) => (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => handleScaleItemChange('gad7', idx, opt.value)}
+                              className={`py-1.5 px-2 text-xs font-medium rounded-md border transition-colors cursor-pointer ${
+                                val === opt.value
+                                  ? 'bg-teal-600 border-teal-600 text-white'
+                                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {activeMentalScale === 'bsrs5' && (
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      BSRS-5 台灣衛福部簡式健康量表（心情溫度計 · 過去一週困擾程度）
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      0–5分：身心適應良好 · 6–9分：輕度情緒困擾 · 10–14分：中度情緒困擾 · 15–20分：重度情緒困擾
+                    </p>
+                  </div>
+                  <span className="text-sm font-mono font-bold tabular-nums text-amber-600 dark:text-amber-400 shrink-0">
+                    {mentalEval.bsrs5Score} / 20 分
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  {BSRS5_QUESTIONS.map((qText, idx) => {
+                    const val = mentalHealthScales.bsrs5?.[idx] ?? 0;
+                    return (
+                      <div
+                        key={qText}
+                        className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                            {qText}
+                          </span>
+                          <span className="text-xs font-mono tabular-nums text-amber-600 dark:text-amber-400 shrink-0">
+                            {val} 分
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+                          {SEVERITY_OPTIONS_0_TO_4.map((opt) => (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => handleScaleItemChange('bsrs5', idx, opt.value)}
+                              className={`py-1.5 px-2 text-xs font-medium rounded-md border transition-colors cursor-pointer ${
+                                val === opt.value
+                                  ? 'bg-amber-600 border-amber-600 text-white'
+                                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {activeMentalScale === 'pss6' && (
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      PSS 感知壓力量表（過去一個月生活壓力與失控感頻率）
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      0–8分：低度感知壓力 · 9–15分：中度可控壓力 · 16–24分：高度感知壓力
+                    </p>
+                  </div>
+                  <span className="text-sm font-mono font-bold tabular-nums text-rose-600 dark:text-rose-400 shrink-0">
+                    {mentalEval.pssScore} / 24 分
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  {PSS6_QUESTIONS.map((qText, idx) => {
+                    const val = mentalHealthScales.pss6?.[idx] ?? 0;
+                    return (
+                      <div
+                        key={qText}
+                        className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                            {qText}
+                          </span>
+                          <span className="text-xs font-mono tabular-nums text-rose-600 dark:text-rose-400 shrink-0">
+                            {val} 分
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+                          {PSS_OPTIONS_0_TO_4.map((opt) => (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => handleScaleItemChange('pss6', idx, opt.value)}
+                              className={`py-1.5 px-2 text-xs font-medium rounded-md border transition-colors cursor-pointer ${
+                                val === opt.value
+                                  ? 'bg-rose-600 border-rose-600 text-white'
+                                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Right 5 cols: 4-Scale Diagnostic Summary, Helpline Alert & Stress Sync */}
+          <div className="lg:col-span-5 flex flex-col justify-between space-y-4">
+            <div className="space-y-4">
+              {/* Top Mental Wellness KPI Box */}
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div>
+                  <span className="text-xs text-slate-500 dark:text-slate-400 block">
+                    綜合心理健康韌性指數
+                  </span>
+                  <div className="flex items-baseline gap-2 mt-1">
+                    <span
+                      data-testid="mental-wellness-score"
+                      className="text-3xl font-bold font-mono tabular-nums text-indigo-600 dark:text-indigo-400"
+                    >
+                      {mentalEval.mentalWellnessScore}
+                    </span>
+                    <span className="text-xs font-mono text-slate-500">/ 100 分</span>
+                  </div>
+                </div>
+
+                {onSyncStressToVitals && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSyncStressToVitals(mentalEval.recommendedPerceivedStress1To10);
+                      setSyncNotice(
+                        `已將主觀壓力等級 (${mentalEval.recommendedPerceivedStress1To10}/10) 同步至「心率與壓力分析」模組`
+                      );
+                      setTimeout(() => setSyncNotice(null), 3500);
+                    }}
+                    className="px-3 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    同步壓力至生理分析 ({mentalEval.recommendedPerceivedStress1To10}/10)
+                  </button>
+                )}
+              </div>
+
+              {syncNotice && (
+                <p role="status" className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                  {syncNotice}
+                </p>
+              )}
+
+              {/* Caring Helpline Banner if Item 9 > 0 or severe distress */}
+              {(mentalEval.hasItem9Alert ||
+                mentalEval.phq9Score >= 15 ||
+                mentalEval.gad7Score >= 15 ||
+                mentalEval.bsrs5Score >= 15) && (
+                <div
+                  role="alert"
+                  className="p-3.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-xs text-rose-900 dark:text-rose-200 space-y-1.5"
+                >
+                  <div className="font-semibold flex items-center gap-1.5">
+                    <HeartHandshake className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>心理健康支持與專業關懷提醒</span>
+                  </div>
+                  <p className="leading-relaxed">
+                    量表顯示您近期承受較高的情緒困擾或心理負荷，請不要獨自承受。建議諮詢身心醫學科醫師、臨床心理師，或隨時撥打台灣 24 小時免付費心理支持專線：
+                  </p>
+                  <p className="font-mono font-semibold">
+                    衛福部安心專線：1925（依舊愛我） · 生命線：1995 · 張老師：1980
+                  </p>
+                </div>
+              )}
+
+              {/* 4 Scale Breakdown Cards */}
+              <div className="divide-y divide-slate-200 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+                {mentalEval.scaleBreakdown.map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => setActiveMentalScale(item.id)}
+                    className={`p-3.5 transition-colors cursor-pointer ${
+                      activeMentalScale === item.id
+                        ? 'bg-indigo-50/40 dark:bg-indigo-950/30'
+                        : 'bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                        {item.title}
+                      </span>
+                      <span className="text-xs font-mono font-bold tabular-nums text-slate-900 dark:text-slate-100">
+                        {item.score} / {item.maxScore} 分
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 mt-1">
+                      <span
+                        className={`text-xs font-semibold ${
+                          item.degree === '亟需改善'
+                            ? 'text-rose-600 dark:text-rose-400'
+                            : item.degree === '建議強化'
+                              ? 'text-amber-600 dark:text-amber-400'
+                              : 'text-emerald-600 dark:text-emerald-400'
+                        }`}
+                      >
+                        判定：{item.level}（{item.degree}）
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                      {item.actionAdvice}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Section 3: Personalized Daily Nutrition Macro Targets & Weekly Exercise Goal Setting */}
       <section
         aria-labelledby="nutrition-exercise-heading"
         className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6"

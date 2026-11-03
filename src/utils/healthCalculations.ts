@@ -938,3 +938,218 @@ export function calculateStressIndex(params: {
     ],
   };
 }
+
+export interface MentalHealthScalesState {
+  /** PHQ-9 憂鬱症自我檢核量表 (9 題，每題 0~3 分，總分 0~27) */
+  phq9: number[];
+  /** GAD-7 廣泛性焦慮量表 (7 題，每題 0~3 分，總分 0~21) */
+  gad7: number[];
+  /** BSRS-5 台灣衛福部心情溫度計/簡式健康量表 (5 題，每題 0~4 分，總分 0~20) */
+  bsrs5: number[];
+  /** PSS 感知壓力量表精簡版 (6 題，每題 0~4 分，總分 0~24) */
+  pss6: number[];
+}
+
+export interface MentalScaleResultItem {
+  id: 'phq9' | 'gad7' | 'bsrs5' | 'pss6';
+  title: string;
+  score: number;
+  maxScore: number;
+  level: string;
+  degree: '維持良好' | '建議強化' | '亟需改善';
+  summary: string;
+  actionAdvice: string;
+}
+
+export interface MentalHealthEvaluationResult {
+  phq9Score: number;
+  phq9Level: '正常範圍 (無憂鬱傾向)' | '輕度憂鬱情緒' | '中度憂鬱傾向' | '中重度憂鬱傾向' | '重度憂鬱傾向';
+  gad7Score: number;
+  gad7Level: '正常範圍 (情緒平穩)' | '輕度焦慮傾向' | '中度焦慮傾向' | '重度焦慮傾向';
+  bsrs5Score: number;
+  bsrs5Level: '身心適應良好' | '輕度情緒困擾' | '中度情緒困擾' | '重度情緒困擾';
+  pssScore: number;
+  pssLevel: '低度感知壓力' | '中度可控壓力' | '高度感知壓力';
+  /** 1~10 換算壓力值，可一鍵同步至心率與壓力分析分頁 */
+  recommendedPerceivedStress1To10: number;
+  /** 0~100 綜合心理韌性指數 (越高代表心理健康越佳) */
+  mentalWellnessScore: number;
+  hasItem9Alert: boolean;
+  scaleBreakdown: MentalScaleResultItem[];
+}
+
+export function evaluateMentalHealthScales(
+  scales: MentalHealthScalesState
+): MentalHealthEvaluationResult {
+  const safeSum = (arr: number[], len: number, maxPerItem: number) =>
+    Array.from({ length: len }, (_, idx) => {
+      const v = Number(arr?.[idx] ?? 0);
+      return Number.isFinite(v) ? Math.max(0, Math.min(maxPerItem, Math.round(v))) : 0;
+    }).reduce((a, b) => a + b, 0);
+
+  const phq9Score = safeSum(scales.phq9, 9, 3);
+  const gad7Score = safeSum(scales.gad7, 7, 3);
+  const bsrs5Score = safeSum(scales.bsrs5, 5, 4);
+  const pssScore = safeSum(scales.pss6, 6, 4);
+  const hasItem9Alert = Number(scales.phq9?.[8] ?? 0) >= 1;
+
+  // 1. PHQ-9 Classification (0-27)
+  let phq9Level: MentalHealthEvaluationResult['phq9Level'] = '正常範圍 (無憂鬱傾向)';
+  let phq9Degree: MentalScaleResultItem['degree'] = '維持良好';
+  let phq9Summary = '過去兩週情緒與生活動力維持穩定，無明顯憂鬱症狀。';
+  let phq9Advice = '持續保持規律戶外日照、社交連結與每週有氧運動習慣。';
+
+  if (phq9Score >= 20) {
+    phq9Level = '重度憂鬱傾向';
+    phq9Degree = '亟需改善';
+    phq9Summary = '出現顯著情緒低落、疲倦或動力喪失，已明顯影響日常作息與生活品質。';
+    phq9Advice = '強烈建議儘速預約身心科/精神科醫師或臨床心理師進行專業評估，亦可撥打衛福部 1925 安心專線尋求即時支持。';
+  } else if (phq9Score >= 15) {
+    phq9Level = '中重度憂鬱傾向';
+    phq9Degree = '亟需改善';
+    phq9Summary = '情緒低落與生理疲勞感頻繁出現，單靠自我調節可能較為吃力。';
+    phq9Advice = '建議尋求專業心理諮商或身心醫學科評估，並暫時降低非必要工作負荷、優先確保基本睡眠。';
+  } else if (phq9Score >= 10) {
+    phq9Level = '中度憂鬱傾向';
+    phq9Degree = '亟需改善';
+    phq9Summary = '近期常感到提不起勁或情緒消沉，建議主動採取減壓與支持介入。';
+    phq9Advice = '建議安排心理諮商會談，每日固定出門接受早晨陽光 15 分鐘以促進血清素分泌。';
+  } else if (phq9Score >= 5) {
+    phq9Level = '輕度憂鬱情緒';
+    phq9Degree = '建議強化';
+    phq9Summary = '偶有短暫情緒低落、疲倦或睡眠波動，多與近期生活壓力事件相關。';
+    phq9Advice = '練習「行為活化法」：每天安排 1 件能帶來微小成就感或愉悅感的活動（如散步、聽音樂、與親友聚餐）。';
+  }
+
+  // 2. GAD-7 Classification (0-21)
+  let gad7Level: MentalHealthEvaluationResult['gad7Level'] = '正常範圍 (情緒平穩)';
+  let gad7Degree: MentalScaleResultItem['degree'] = '維持良好';
+  let gad7Summary = '過去兩週思緒平穩，能有效應對日常不確定性，無過度擔憂傾向。';
+  let gad7Advice = '維持目前的作息節律與休閒紓壓習慣。';
+
+  if (gad7Score >= 15) {
+    gad7Level = '重度焦慮傾向';
+    gad7Degree = '亟需改善';
+    gad7Summary = '長期處於高度緊繃、無法停止憂慮與坐立不安狀態，交感神經過度亢奮。';
+    gad7Advice = '建議尋求身心科或認知行為治療 (CBT) 專業協助；日常完全停用咖啡因，並每日早晚執行 4-7-8 腹式呼吸。';
+  } else if (gad7Score >= 10) {
+    gad7Level = '中度焦慮傾向';
+    gad7Degree = '亟需改善';
+    gad7Summary = '經常對多項事務感到過度擔憂且難以放鬆，容易引發肩頸緊繃或入睡困難。';
+    gad7Advice = '建議練習「擔憂時間限制法」與正念身體掃描，減少睡前滑手機接收過量資訊，必要時諮詢心理師。';
+  } else if (gad7Score >= 5) {
+    gad7Level = '輕度焦慮傾向';
+    gad7Degree = '建議強化';
+    gad7Summary = '偶爾感到緊張或煩躁，面對期限或多重任務時較不易放鬆。';
+    gad7Advice = '工作每 90 分鐘進行 3 分鐘深呼吸伸展，午後改喝無咖啡因花草茶，透過 Zone 2 有氧運動釋放焦慮張力。';
+  }
+
+  // 3. BSRS-5 Mood Thermometer (0-20)
+  let bsrs5Level: MentalHealthEvaluationResult['bsrs5Level'] = '身心適應良好';
+  let bsrs5Degree: MentalScaleResultItem['degree'] = '維持良好';
+  let bsrs5Summary = '心情溫度計總分 0~5 分，目前身心壓力與情緒適應狀況良好。';
+  let bsrs5Advice = '持續留意自身情緒變化，保持良好的生活與睡眠衛生。';
+
+  if (bsrs5Score >= 15) {
+    bsrs5Level = '重度情緒困擾';
+    bsrs5Degree = '亟需改善';
+    bsrs5Summary = '心情溫度計達 15 分以上，身心承受高度痛苦與情緒困擾。';
+    bsrs5Advice = '請務必尋求精神科/身心科醫師或心理師專業協助，或撥打 1925 依舊愛我安心專線（24小時免付費）。';
+  } else if (bsrs5Score >= 10) {
+    bsrs5Level = '中度情緒困擾';
+    bsrs5Degree = '亟需改善';
+    bsrs5Summary = '心情溫度計 10~14 分，情緒困擾與失眠/易怒已明顯累積。';
+    bsrs5Advice = '建議接受專業心理諮商或醫療諮詢，檢視近期壓力源並適度尋求職場或家庭支持分工。';
+  } else if (bsrs5Score >= 6) {
+    bsrs5Level = '輕度情緒困擾';
+    bsrs5Degree = '建議強化';
+    bsrs5Summary = '心情溫度計 6~9 分，近期有輕微緊張、動怒或睡眠品質下降。';
+    bsrs5Advice = '建議找信任的家人或朋友談談抒發情緒，安排週末大自然散步並提前 30 分鐘就寢。';
+  }
+
+  // 4. PSS-6 Perceived Stress Scale (0-24)
+  let pssLevel: MentalHealthEvaluationResult['pssLevel'] = '低度感知壓力';
+  let pssDegree: MentalScaleResultItem['degree'] = '維持良好';
+  let pssSummary = '對生活與工作具備高度掌控感，壓力負荷在可輕鬆調節範圍內。';
+  let pssAdvice = '維持目前的時間管理與自我照顧節奏。';
+
+  if (pssScore >= 16) {
+    pssLevel = '高度感知壓力';
+    pssDegree = '亟需改善';
+    pssSummary = '頻繁感到生活失控、事情堆積如山難以招架，皮質醇可能長期偏高。';
+    pssAdvice = '採用「艾森豪矩陣」刪減非核心任務，設定明確下班界線，並將壓力分數同步至「心率與壓力分析」追蹤生理負荷。';
+  } else if (pssScore >= 9) {
+    pssLevel = '中度可控壓力';
+    pssDegree = '建議強化';
+    pssSummary = '日常有一定工作與生活挑戰，偶有緊迫感但仍可維持基本運作。';
+    pssAdvice = '每週保留至少 2 個晚間為「無工作恢復時段」，搭配規律有氧運動提升抗壓閾值。';
+  }
+
+  const recommendedPerceivedStress1To10 = Math.max(
+    1,
+    Math.min(10, Math.round(1 + (pssScore / 24) * 9))
+  );
+
+  // Total possible distress points = 27 + 21 + 20 + 24 = 92
+  const totalDistress = phq9Score + gad7Score + bsrs5Score + pssScore;
+  const mentalWellnessScore = Math.max(0, Math.min(100, Math.round(100 - (totalDistress / 92) * 100)));
+
+  const scaleBreakdown: MentalScaleResultItem[] = [
+    {
+      id: 'phq9',
+      title: 'PHQ-9 憂鬱症自我檢核量表',
+      score: phq9Score,
+      maxScore: 27,
+      level: phq9Level,
+      degree: hasItem9Alert ? '亟需改善' : phq9Degree,
+      summary: phq9Summary,
+      actionAdvice: phq9Advice,
+    },
+    {
+      id: 'gad7',
+      title: 'GAD-7 廣泛性焦慮量表',
+      score: gad7Score,
+      maxScore: 21,
+      level: gad7Level,
+      degree: gad7Degree,
+      summary: gad7Summary,
+      actionAdvice: gad7Advice,
+    },
+    {
+      id: 'bsrs5',
+      title: 'BSRS-5 心情溫度計 (簡式健康量表)',
+      score: bsrs5Score,
+      maxScore: 20,
+      level: bsrs5Level,
+      degree: bsrs5Degree,
+      summary: bsrs5Summary,
+      actionAdvice: bsrs5Advice,
+    },
+    {
+      id: 'pss6',
+      title: 'PSS 感知壓力與生活掌控度量表',
+      score: pssScore,
+      maxScore: 24,
+      level: pssLevel,
+      degree: pssDegree,
+      summary: pssSummary,
+      actionAdvice: pssAdvice,
+    },
+  ];
+
+  return {
+    phq9Score,
+    phq9Level,
+    gad7Score,
+    gad7Level,
+    bsrs5Score,
+    bsrs5Level,
+    pssScore,
+    pssLevel,
+    recommendedPerceivedStress1To10,
+    mentalWellnessScore,
+    hasItem9Alert,
+    scaleBreakdown,
+  };
+}
+

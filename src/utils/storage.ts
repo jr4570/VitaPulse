@@ -3,6 +3,7 @@ import {
   BmiStandard,
   Gender,
   HealthGoal,
+  MentalHealthScalesState,
   QuestionnaireAnswers,
   calculateBMI,
 } from './healthCalculations';
@@ -76,6 +77,7 @@ export interface PrivacySettings {
 export interface VitaPulseState {
   profile: UserProfile;
   questionnaire: QuestionnaireAnswers;
+  mentalHealthScales: MentalHealthScalesState;
   history: HealthHistoryRecord[];
   waterLogsToday: WaterIntakeEntry[];
   waterReminderIntervalMins: number;
@@ -165,6 +167,12 @@ export const DEFAULT_SEED_STATE: VitaPulseState = {
     hydrationHabit: 8,
     stressResilience: 10,
     substanceControl: 9,
+  },
+  mentalHealthScales: {
+    phq9: [0, 1, 1, 1, 0, 0, 1, 0, 0], // 總分 4 分 (正常範圍)
+    gad7: [1, 0, 1, 1, 0, 1, 0],       // 總分 4 分 (情緒平穩)
+    bsrs5: [1, 1, 1, 0, 0],            // 總分 3 分 (身心適應良好)
+    pss6: [1, 1, 2, 1, 1, 1],          // 總分 7 分 (低度感知壓力)
   },
   history: [
     {
@@ -420,6 +428,10 @@ export function loadState(): VitaPulseState {
       ...parsed,
       profile: { ...DEFAULT_SEED_STATE.profile, ...(parsed.profile || {}) },
       questionnaire: { ...DEFAULT_SEED_STATE.questionnaire, ...(parsed.questionnaire || {}) },
+      mentalHealthScales: {
+        ...DEFAULT_SEED_STATE.mentalHealthScales,
+        ...(parsed.mentalHealthScales || {}),
+      },
       privacy: mergedPrivacy,
     };
   } catch {
