@@ -1,0 +1,6 @@
+{
+  "name": "VitaPulse 全方位個人健康管家",
+  "description": "結合 BMI 與身體組成計算、歷史健康趨勢圖表、健康問卷評分與營養運動處方、睡眠品質監測、水分攝取提醒、心率追蹤與壓力指數分析的個人化健康管理系統，具備本地端隱私保護與資料備份功能。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
