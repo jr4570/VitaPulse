@@ -1,5 +1,10 @@
-import React from 'react';
-import { PrivacySettings, isGitHubDemoLocked } from '../utils/storage';
+import React, { useState } from 'react';
+import {
+  PrivacySettings,
+  isEnvForcedGitHubDemo,
+  isGitHubDemoLocked,
+  isPreventCloseLocked,
+} from '../utils/storage';
 import {
   BookOpen,
   ShieldAlert,
@@ -30,7 +35,25 @@ export const UserGuideTab: React.FC<UserGuideTabProps> = ({
   onTriggerPinLockNow,
   onNavigateTab,
 }) => {
+  const envForcedGithub = isEnvForcedGitHubDemo();
   const githubLocked = isGitHubDemoLocked(privacy);
+  const preventCloseLocked = isPreventCloseLocked(privacy);
+  const [showSelfHostVerify, setShowSelfHostVerify] = useState(false);
+  const [selfHostPinInput, setSelfHostPinInput] = useState('');
+  const [selfHostError, setSelfHostError] = useState<string | null>(null);
+
+  const handleVerifySwitchToSelfHosted = (e: React.FormEvent) => {
+    e.preventDefault();
+    const expectedPin = privacy.pinCode || '2580';
+    if (selfHostPinInput === expectedPin) {
+      onUpdatePrivacy({ deploymentTarget: 'self-hosted' });
+      setShowSelfHostVerify(false);
+      setSelfHostPinInput('');
+      setSelfHostError(null);
+    } else {
+      setSelfHostError('管理員 PIN 碼錯誤，無法解除 GitHub 部署防關鎖定');
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -49,11 +72,11 @@ export const UserGuideTab: React.FC<UserGuideTabProps> = ({
               <span>部署環境權限、演示模式與防止關閉設定中心</span>
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              GitHub 公開部署環境強制鎖定「演示模式」與「防止關閉保護」；個人自架部署環境則可自由關閉演示模式與防關閉設定
+              GitHub 部署模式或開啟演示模式 (Demo) 時，「防止關閉保護」強制鎖定不可關閉；自架部署需驗證管理員 PIN 並關閉演示模式後方可關閉防關保護
             </p>
           </div>
 
-          {/* Deployment Mode Switcher (Allows testing GitHub Pages Lock vs Self-Hosted Unlock) */}
+          {/* Deployment Mode Switcher */}
           <div
             role="group"
             aria-label="部署環境模式切換"
@@ -61,13 +84,15 @@ export const UserGuideTab: React.FC<UserGuideTabProps> = ({
           >
             <button
               type="button"
-              onClick={() =>
+              onClick={() => {
+                setShowSelfHostVerify(false);
+                setSelfHostError(null);
                 onUpdatePrivacy({
                   deploymentTarget: 'github-pages',
                   demoModeEnabled: true,
                   preventAccidentalClose: true,
-                })
-              }
+                });
+              }}
               className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
                 githubLocked
                   ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
@@ -79,22 +104,80 @@ export const UserGuideTab: React.FC<UserGuideTabProps> = ({
             </button>
             <button
               type="button"
-              onClick={() =>
-                onUpdatePrivacy({
-                  deploymentTarget: 'self-hosted',
-                })
+              disabled={envForcedGithub}
+              onClick={() => {
+                if (envForcedGithub) return;
+                if (githubLocked) {
+                  setShowSelfHostVerify(true);
+                }
+              }}
+              title={
+                envForcedGithub
+                  ? '目前網域 (*.github.io) 或環境變數 VITE_GITHUB_DEMO=true 已強制鎖定為 GitHub 演示模式'
+                  : '切換為個人自架部署需驗證管理員 PIN 碼'
               }
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
-                !githubLocked
-                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400'
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                envForcedGithub
+                  ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed'
+                  : !githubLocked
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs cursor-pointer'
+                    : 'text-slate-600 dark:text-slate-400 cursor-pointer'
               }`}
             >
               <Server className="w-3.5 h-3.5 text-indigo-600" />
-              <span>個人自架部署 (可自由關閉)</span>
+              <span>
+                {envForcedGithub
+                  ? '自架部署 (GitHub 網域鎖定)'
+                  : !githubLocked
+                    ? '個人自架部署 (已解鎖)'
+                    : '切換為自架部署 (需 PIN 驗證)'}
+              </span>
             </button>
           </div>
         </div>
+
+        {showSelfHostVerify && githubLocked && !envForcedGithub && (
+          <form
+            onSubmit={handleVerifySwitchToSelfHosted}
+            className="mt-4 p-3.5 rounded-lg bg-indigo-50/80 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+          >
+            <div className="text-xs text-indigo-950 dark:text-indigo-200">
+              <span className="font-semibold">管理員權限驗證：</span>
+              <span>
+                為防止訪客隨意解除「GitHub 部署鎖定」，請輸入管理員 PIN 碼（Demo 預設為{' '}
+                <strong className="font-mono">{privacy.pinCode || '2580'}</strong>）以切換至「個人自架部署」：
+              </span>
+              {selfHostError && (
+                <p className="text-rose-600 dark:text-rose-400 font-semibold mt-1">{selfHostError}</p>
+              )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <input
+                type="password"
+                placeholder={`PIN (${privacy.pinCode || '2580'})`}
+                value={selfHostPinInput}
+                onChange={(e) => setSelfHostPinInput(e.target.value)}
+                className="w-28 px-2.5 py-1.5 text-xs font-mono bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 rounded-md"
+              />
+              <button
+                type="submit"
+                className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-md cursor-pointer"
+              >
+                驗證並切換自架
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSelfHostVerify(false);
+                  setSelfHostError(null);
+                }}
+                className="px-2.5 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:underline cursor-pointer"
+              >
+                取消
+              </button>
+            </div>
+          </form>
+        )}
 
         {/* 3 Control Cards */}
         <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -115,8 +198,8 @@ export const UserGuideTab: React.FC<UserGuideTabProps> = ({
               </div>
               <p className="text-xs text-slate-600 dark:text-slate-400 mt-1.5 leading-relaxed">
                 {githubLocked
-                  ? '目前處於 GitHub 公開部署環境 (*.github.io / VITE_GITHUB_DEMO=true)，系統強制維持演示模式並禁止訪客關閉，確保公開展示體驗穩定。'
-                  : '目前處於個人自架部署環境，您可隨時關閉演示模式，改用您個人的真實健康檔案與設定。'}
+                  ? '目前處於 GitHub 部署鎖定模式，系統強制維持演示模式並禁止關閉，確保公開展示體驗穩定。'
+                  : '目前處於個人自架部署模式，您可隨時關閉演示模式；當關閉演示模式後，右側的「防止誤關視窗保護」即可自由關閉。'}
               </p>
             </div>
             <button
@@ -124,7 +207,11 @@ export const UserGuideTab: React.FC<UserGuideTabProps> = ({
               disabled={githubLocked}
               onClick={() => {
                 if (!githubLocked) {
-                  onUpdatePrivacy({ demoModeEnabled: !privacy.demoModeEnabled });
+                  const nextDemo = !privacy.demoModeEnabled;
+                  onUpdatePrivacy({
+                    demoModeEnabled: nextDemo,
+                    ...(nextDemo ? { preventAccidentalClose: true } : {}),
+                  });
                 }
               }}
               className={`w-full py-2 px-3 text-xs font-semibold rounded-lg transition-colors ${
@@ -138,8 +225,8 @@ export const UserGuideTab: React.FC<UserGuideTabProps> = ({
               {githubLocked
                 ? 'GitHub 部署環境禁止關閉演示模式'
                 : privacy.demoModeEnabled
-                  ? '關閉演示模式 (切換為個人正式模式)'
-                  : '重新開啟演示模式'}
+                  ? '關閉演示模式 (解鎖防關按鈕)'
+                  : '重新開啟演示模式 (鎖定防關)'}
             </button>
           </div>
 
@@ -151,37 +238,37 @@ export const UserGuideTab: React.FC<UserGuideTabProps> = ({
                   02. 防止誤關視窗保護 (BeforeUnload)
                 </span>
                 <span className="text-xs font-mono font-semibold text-teal-700 dark:text-teal-400">
-                  {githubLocked
-                    ? '強制防關閉'
+                  {preventCloseLocked
+                    ? '強制防關閉鎖定中'
                     : privacy.preventAccidentalClose
                       ? '防關閉已啟用'
                       : '已關閉防關保護'}
                 </span>
               </div>
               <p className="text-xs text-slate-600 dark:text-slate-400 mt-1.5 leading-relaxed">
-                {githubLocked
-                  ? '在 GitHub 演示模式下，防止關閉視窗保護為強制鎖定狀態，無法被關閉。'
-                  : '自架部署模式下，您可以自由開啟或關閉瀏覽器分頁防誤關攔截提示。'}
+                {preventCloseLocked
+                  ? '當處於「GitHub 部署模式」或「演示模式 (Demo) 開啟中」時，防止關閉保護為強制鎖定狀態，無法關閉。請先於自架部署下關閉演示模式方可關閉。'
+                  : '您已切換為個人自架且關閉演示模式，現在可自由關閉或開啟瀏覽器分頁防誤關保護。'}
               </p>
             </div>
             <button
               type="button"
-              disabled={githubLocked}
+              disabled={preventCloseLocked}
               onClick={() => {
-                if (!githubLocked) {
+                if (!preventCloseLocked) {
                   onUpdatePrivacy({ preventAccidentalClose: !privacy.preventAccidentalClose });
                 }
               }}
               className={`w-full py-2 px-3 text-xs font-semibold rounded-lg transition-colors ${
-                githubLocked
+                preventCloseLocked
                   ? 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-not-allowed'
                   : privacy.preventAccidentalClose
                     ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-slate-800 cursor-pointer'
                     : 'bg-teal-600 text-white hover:bg-teal-700 cursor-pointer'
               }`}
             >
-              {githubLocked
-                ? 'GitHub 演示模式禁止關閉防關保護'
+              {preventCloseLocked
+                ? '演示模式 / GitHub 部署中禁止關閉防關保護'
                 : privacy.preventAccidentalClose
                   ? '關閉「防止誤關視窗保護」'
                   : '啟用「防止誤關視窗保護」'}

@@ -90,28 +90,55 @@ export interface VitaPulseState {
 export const STORAGE_KEY = 'vitapulse_health_steward_v2';
 
 /**
- * Detect whether the current runtime environment is a GitHub Pages deployment
- * or explicitly configured with VITE_GITHUB_DEMO="true".
+ * Returns true if the build/domain environment strictly forces GitHub Demo mode
+ * (*.github.io domain or VITE_GITHUB_DEMO="true").
  */
-export function detectInitialDeploymentTarget(): DeploymentTarget {
+export function isEnvForcedGitHubDemo(): boolean {
   try {
     if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GITHUB_DEMO === 'true') {
-      return 'github-pages';
+      return true;
     }
     if (typeof window !== 'undefined' && window.location.hostname.endsWith('.github.io')) {
-      return 'github-pages';
+      return true;
     }
   } catch {
     // Ignore env read errors
   }
-  return 'self-hosted';
+  return false;
 }
 
 /**
- * Returns true if the app is running in GitHub Demo Lock mode (where Demo Mode and Prevent-Close cannot be disabled).
+ * Detect initial deployment target. Defaults to 'github-pages' (Demo Lock ON) unless
+ * VITE_GITHUB_DEMO="false" is explicitly set for self-hosted builds.
+ */
+export function detectInitialDeploymentTarget(): DeploymentTarget {
+  try {
+    if (isEnvForcedGitHubDemo()) {
+      return 'github-pages';
+    }
+    if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GITHUB_DEMO === 'false') {
+      return 'self-hosted';
+    }
+  } catch {
+    // Ignore env read errors
+  }
+  return 'github-pages';
+}
+
+/**
+ * Returns true if the app is running in GitHub Demo Lock mode (where Demo Mode cannot be disabled).
  */
 export function isGitHubDemoLocked(privacy: PrivacySettings): boolean {
-  return privacy.deploymentTarget === 'github-pages';
+  return isEnvForcedGitHubDemo() || privacy.deploymentTarget === 'github-pages';
+}
+
+/**
+ * Returns true if the Prevent-Close (beforeunload) button is locked ON and cannot be turned off.
+ * Whenever GitHub Demo Lock is active OR Demo Mode (演示模式) is ON, Prevent-Close is locked ON.
+ * Only when in Self-Hosted mode AND Demo Mode is turned OFF (or unlocked in Self-Hosted mode) can Prevent-Close be turned off.
+ */
+export function isPreventCloseLocked(privacy: PrivacySettings): boolean {
+  return isGitHubDemoLocked(privacy) || privacy.demoModeEnabled;
 }
 
 export const DEFAULT_SEED_STATE: VitaPulseState = {
@@ -379,10 +406,13 @@ export function loadState(): VitaPulseState {
       ...DEFAULT_SEED_STATE.privacy,
       ...(parsed.privacy || {}),
     };
-    // If deployed on GitHub Pages or VITE_GITHUB_DEMO=true, enforce demoModeEnabled & preventAccidentalClose
-    if (detectInitialDeploymentTarget() === 'github-pages') {
+    // If deployed on GitHub Pages or in GitHub Demo Lock mode, enforce demoModeEnabled & preventAccidentalClose
+    if (isEnvForcedGitHubDemo() || mergedPrivacy.deploymentTarget === 'github-pages') {
       mergedPrivacy.deploymentTarget = 'github-pages';
       mergedPrivacy.demoModeEnabled = true;
+      mergedPrivacy.preventAccidentalClose = true;
+    } else if (mergedPrivacy.demoModeEnabled) {
+      // Whenever Demo Mode is ON, Prevent-Close is locked ON
       mergedPrivacy.preventAccidentalClose = true;
     }
     return {

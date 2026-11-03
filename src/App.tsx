@@ -14,6 +14,7 @@ import {
   createSnapshotRecordFromState,
   formatMaskedNumber,
   isGitHubDemoLocked,
+  isPreventCloseLocked,
   loadState,
   saveState,
 } from './utils/storage';
@@ -102,7 +103,8 @@ export default function App() {
   const masked = privacy.maskSensitiveNumbers;
   const isGithubLocked = isGitHubDemoLocked(privacy);
   const effectiveDemoMode = isGithubLocked ? true : privacy.demoModeEnabled;
-  const effectivePreventClose = isGithubLocked ? true : privacy.preventAccidentalClose;
+  const preventCloseLocked = isPreventCloseLocked(privacy);
+  const effectivePreventClose = preventCloseLocked ? true : privacy.preventAccidentalClose;
 
   // Prevent accidental browser tab/window close when effectivePreventClose is enabled
   useEffect(() => {
@@ -465,33 +467,33 @@ export default function App() {
 
             {/* Secondary Workspace Utility Controls */}
             <div className="flex flex-wrap items-center gap-2">
-              {/* Deployment Environment Switcher (GitHub Demo Locked vs Self-Hosted Unlocked) */}
+              {/* Deployment Environment Indicator / Lock Button (Disabled when locked in GitHub mode; unlock requires PIN in Settings) */}
               <button
                 type="button"
+                disabled={isGithubLocked}
                 onClick={() => {
-                  if (isGithubLocked) {
-                    handleUpdatePrivacy({ deploymentTarget: 'self-hosted' });
-                    setQuickSaveToast('已切換為「自己部署模式 (Self-Hosted)」，現在可自由關閉演示模式與防止關閉保護');
-                    setTimeout(() => setQuickSaveToast(null), 3500);
-                  } else {
-                    handleUpdatePrivacy({
-                      deploymentTarget: 'github-pages',
-                      demoModeEnabled: true,
-                      preventAccidentalClose: true,
-                    });
-                    setQuickSaveToast('已切換為「GitHub 部署模式」，演示模式與防止關閉保護已強制鎖定開啟');
-                    setTimeout(() => setQuickSaveToast(null), 3500);
-                  }
+                  if (isGithubLocked) return;
+                  handleUpdatePrivacy({
+                    deploymentTarget: 'github-pages',
+                    demoModeEnabled: true,
+                    preventAccidentalClose: true,
+                  });
+                  setQuickSaveToast('已切換為「GitHub 部署模式」，演示模式與防止關閉保護已強制鎖定開啟（欲切換回自架請至使用說明驗證 PIN 碼）');
+                  setTimeout(() => setQuickSaveToast(null), 4000);
                 }}
-                title="點擊切換 GitHub 部署演示鎖定模式與個人自己部署模式"
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
+                title={
                   isGithubLocked
-                    ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-300 dark:border-indigo-800 text-indigo-800 dark:text-indigo-300'
-                    : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100'
+                    ? 'GitHub 部署演示模式已鎖定防關（不可直接點擊關閉；自架管理員可於「使用說明與設定」驗證 PIN 碼切換）'
+                    : '目前為自己部署模式，點擊可鎖定為 GitHub 公開演示模式'
+                }
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                  isGithubLocked
+                    ? 'bg-slate-100 dark:bg-slate-800/90 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed'
+                    : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 cursor-pointer'
                 }`}
               >
                 {isGithubLocked ? <Globe className="w-3.5 h-3.5" /> : <Server className="w-3.5 h-3.5" />}
-                <span>{isGithubLocked ? 'GitHub 部署 (鎖定防關)' : '自己部署 (可關閉)'}</span>
+                <span>{isGithubLocked ? 'GitHub 部署 (鎖定防關)' : '自己部署模式'}</span>
               </button>
 
               {/* Demo Mode Toggle (Locked ON when deployed to GitHub; freely toggleable when self-hosted) */}
@@ -500,12 +502,16 @@ export default function App() {
                 disabled={isGithubLocked}
                 onClick={() => {
                   if (isGithubLocked) return;
-                  handleUpdatePrivacy({ demoModeEnabled: !privacy.demoModeEnabled });
+                  const nextDemo = !privacy.demoModeEnabled;
+                  handleUpdatePrivacy({
+                    demoModeEnabled: nextDemo,
+                    ...(nextDemo ? { preventAccidentalClose: true } : {}),
+                  });
                 }}
                 title={
                   isGithubLocked
-                    ? '部署到 GitHub 的演示模式已防止關閉；切換至自己部署即可關閉'
-                    : '自己部署環境下可自由開啟或關閉演示模式'
+                    ? '部署到 GitHub 的演示模式已防止關閉'
+                    : '自己部署環境下可自由開啟或關閉演示模式（開啟演示時將自動鎖定防誤關保護）'
                 }
                 className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                   isGithubLocked
@@ -519,26 +525,26 @@ export default function App() {
                   {isGithubLocked
                     ? '演示模式 (防關閉鎖定)'
                     : effectiveDemoMode
-                      ? '演示模式開啟中'
-                      : '演示已關閉 (自用)'}
+                      ? '演示模式開啟 (點擊可關閉)'
+                      : '演示已關閉 (個人自用)'}
                 </span>
               </button>
 
-              {/* Prevent Accidental Close Guard Toggle (Locked ON when deployed to GitHub; freely toggleable when self-hosted) */}
+              {/* Prevent Accidental Close Guard Toggle (Locked ON whenever GitHub mode OR Demo Mode is ON; only toggleable when Demo Mode is OFF in self-hosted) */}
               <button
                 type="button"
-                disabled={isGithubLocked}
+                disabled={preventCloseLocked}
                 onClick={() => {
-                  if (isGithubLocked) return;
+                  if (preventCloseLocked) return;
                   handleUpdatePrivacy({ preventAccidentalClose: !privacy.preventAccidentalClose });
                 }}
                 title={
-                  isGithubLocked
-                    ? '部署到 GitHub 時強制開啟防止關閉保護；自己部署可自由關閉'
+                  preventCloseLocked
+                    ? '演示模式或 GitHub 部署下強制鎖定防止關閉保護；請先於自己部署模式下關閉演示模式才可解除防關'
                     : '點擊切換防止誤關視窗保護 (beforeunload)'
                 }
                 className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
-                  isGithubLocked
+                  preventCloseLocked
                     ? 'bg-slate-100 dark:bg-slate-800/90 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed'
                     : effectivePreventClose
                       ? 'bg-teal-50 dark:bg-teal-950/60 border-teal-300 dark:border-teal-800 text-teal-800 dark:text-teal-300 cursor-pointer'
@@ -547,8 +553,8 @@ export default function App() {
               >
                 <ShieldAlert className="w-3.5 h-3.5" />
                 <span>
-                  {isGithubLocked
-                    ? '防誤關 (GitHub 鎖定)'
+                  {preventCloseLocked
+                    ? '防誤關 (鎖定防關)'
                     : effectivePreventClose
                       ? '防誤關保護中'
                       : '防誤關已關閉'}

@@ -3,7 +3,9 @@ import {
   PrivacySettings,
   VitaPulseState,
   formatMaskedNumber,
+  isEnvForcedGitHubDemo,
   isGitHubDemoLocked,
+  isPreventCloseLocked,
 } from '../utils/storage';
 import { ChartMetricKey, TrendChartSvg } from './TrendChartSvg';
 import {
@@ -48,14 +50,18 @@ export const HistoryAndPrivacyTab: React.FC<HistoryAndPrivacyTabProps> = ({
   const [pinInput, setPinInput] = useState<string>(fullState.privacy.pinCode || '2580');
   const [verifyPinForDisable, setVerifyPinForDisable] = useState<string>('');
   const [showDisableVerifyBox, setShowDisableVerifyBox] = useState<boolean>(false);
+  const [showUnlockDeployBox, setShowUnlockDeployBox] = useState<boolean>(false);
+  const [unlockDeployPin, setUnlockDeployPin] = useState<string>('');
   const [vaultFeedback, setVaultFeedback] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
   const { history, privacy, profile } = fullState;
   const masked = privacy.maskSensitiveNumbers;
+  const envForcedGithub = isEnvForcedGitHubDemo();
   const isGithubLocked = isGitHubDemoLocked(privacy);
   const effectiveDemoMode = isGithubLocked ? true : privacy.demoModeEnabled;
-  const effectivePreventClose = isGithubLocked ? true : privacy.preventAccidentalClose;
+  const preventCloseLocked = isPreventCloseLocked(privacy);
+  const effectivePreventClose = preventCloseLocked ? true : privacy.preventAccidentalClose;
 
   const sortedHistory = [...history].sort((a, b) => b.date.localeCompare(a.date));
 
@@ -387,26 +393,64 @@ export const HistoryAndPrivacyTab: React.FC<HistoryAndPrivacyTabProps> = ({
                 <ShieldAlert className="w-4 h-4 text-teal-600" />
                 <span>演示模式與防關閉控制</span>
               </span>
-              <button
-                type="button"
-                onClick={() => {
-                  if (isGithubLocked) {
-                    onUpdatePrivacy({ deploymentTarget: 'self-hosted' });
-                    setVaultFeedback('已切換為「自己部署模式 (Self-Hosted)」，現在可自由關閉演示模式與防止關閉保護');
-                  } else {
+              {envForcedGithub ? (
+                <span className="text-xs font-mono font-semibold text-slate-500">
+                  GitHub 網域鎖定
+                </span>
+              ) : isGithubLocked ? (
+                <button
+                  type="button"
+                  onClick={() => setShowUnlockDeployBox(!showUnlockDeployBox)}
+                  className="text-xs font-mono font-semibold text-indigo-700 dark:text-indigo-400 hover:underline cursor-pointer"
+                >
+                  申請切換自架 (需 PIN)
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
                     onUpdatePrivacy({
                       deploymentTarget: 'github-pages',
                       demoModeEnabled: true,
                       preventAccidentalClose: true,
                     });
                     setVaultFeedback('已切換為「GitHub 公開演示模式」，演示模式與防關閉保護已鎖定開啟');
-                  }
-                }}
-                className="text-xs font-mono font-semibold text-teal-700 dark:text-teal-400 hover:underline cursor-pointer"
-              >
-                {isGithubLocked ? 'GitHub 演示鎖定 (切換為自架)' : '自己部署模式 (切換為 GitHub)'}
-              </button>
+                  }}
+                  className="text-xs font-mono font-semibold text-teal-700 dark:text-teal-400 hover:underline cursor-pointer"
+                >
+                  自己部署 (鎖定為 GitHub)
+                </button>
+              )}
             </div>
+
+            {showUnlockDeployBox && isGithubLocked && !envForcedGithub && (
+              <div className="p-2.5 rounded-lg bg-indigo-50/80 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 flex items-center gap-2">
+                <input
+                  type="password"
+                  placeholder={`輸入 PIN 解鎖自架 (${privacy.pinCode || '2580'})`}
+                  value={unlockDeployPin}
+                  onChange={(e) => setUnlockDeployPin(e.target.value)}
+                  className="flex-1 px-2 py-1 text-xs font-mono bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 rounded"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (unlockDeployPin === (privacy.pinCode || '2580')) {
+                      onUpdatePrivacy({ deploymentTarget: 'self-hosted' });
+                      setShowUnlockDeployBox(false);
+                      setUnlockDeployPin('');
+                      setImportError(null);
+                      setVaultFeedback('已驗證 PIN 碼並切換為「自己部署模式 (Self-Hosted)」，現在可關閉演示模式與防關閉保護');
+                    } else {
+                      setImportError('管理員 PIN 碼錯誤，無法解除 GitHub 部署鎖定');
+                    }
+                  }}
+                  className="px-2.5 py-1 text-xs font-semibold bg-indigo-600 text-white rounded hover:bg-indigo-700 whitespace-nowrap cursor-pointer"
+                >
+                  驗證解鎖
+                </button>
+              </div>
+            )}
 
             {/* Demo Mode Switch */}
             <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-2">
@@ -417,7 +461,7 @@ export const HistoryAndPrivacyTab: React.FC<HistoryAndPrivacyTabProps> = ({
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                   {isGithubLocked
                     ? 'GitHub 部署下強制開啟防止關閉'
-                    : '自己部署可自由關閉並轉為自用模式'}
+                    : '自己部署可關閉演示以解鎖防關按鈕'}
                 </p>
               </div>
               <button
@@ -425,7 +469,11 @@ export const HistoryAndPrivacyTab: React.FC<HistoryAndPrivacyTabProps> = ({
                 disabled={isGithubLocked}
                 onClick={() => {
                   if (isGithubLocked) return;
-                  onUpdatePrivacy({ demoModeEnabled: !privacy.demoModeEnabled });
+                  const nextDemo = !privacy.demoModeEnabled;
+                  onUpdatePrivacy({
+                    demoModeEnabled: nextDemo,
+                    ...(nextDemo ? { preventAccidentalClose: true } : {}),
+                  });
                 }}
                 className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
                   isGithubLocked
@@ -450,27 +498,27 @@ export const HistoryAndPrivacyTab: React.FC<HistoryAndPrivacyTabProps> = ({
                   防止誤關視窗保護 (BeforeUnload)
                 </p>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                  {isGithubLocked
-                    ? 'GitHub 部署下強制攔截誤關分頁'
-                    : '自己部署可自由關閉或開啟防誤關保護'}
+                  {preventCloseLocked
+                    ? '演示模式或 GitHub 部署下強制鎖定防關閉'
+                    : '演示已關閉，可自由切換防誤關保護'}
                 </p>
               </div>
               <button
                 type="button"
-                disabled={isGithubLocked}
+                disabled={preventCloseLocked}
                 onClick={() => {
-                  if (isGithubLocked) return;
+                  if (preventCloseLocked) return;
                   onUpdatePrivacy({ preventAccidentalClose: !privacy.preventAccidentalClose });
                 }}
                 className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
-                  isGithubLocked
+                  preventCloseLocked
                     ? 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-not-allowed'
                     : effectivePreventClose
                       ? 'bg-teal-600 text-white hover:bg-teal-700 cursor-pointer'
                       : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 cursor-pointer'
                 }`}
               >
-                {isGithubLocked
+                {preventCloseLocked
                   ? '鎖定開啟 (防關閉)'
                   : effectivePreventClose
                     ? '已啟用 (點擊關閉)'
